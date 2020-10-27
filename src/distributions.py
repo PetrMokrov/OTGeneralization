@@ -18,7 +18,7 @@ class DistributionSampler(IterableDataset):
         np_mean, np_cov = np.mean(batch, axis=0), np.cov(batch.T)
         
         trc_mean = torch.tensor(
-            np_mean, device=self.device, dtype=self.dtype
+            np_mean, dtype=self.dtype
         )
         assert(len(np_cov.shape) != 1)
 
@@ -32,12 +32,11 @@ class DistributionSampler(IterableDataset):
             np_multiplier += np.eye(np_multiplier.shape[0]) * eps
 
         trc_multiplier = torch.tensor(
-            np_multiplier, device=self.device, dtype=self.dtype
+            np_multiplier, dtype=self.dtype
         )
 
         trc_inv_multiplier = torch.tensor(
-            np.linalg.inv(np_multiplier),
-            device=self.device, dtype=self.dtype
+            np.linalg.inv(np_multiplier), dtype=self.dtype
         )
             
         def _normalizer(self, batch):
@@ -136,7 +135,7 @@ class DistributionSampler(IterableDataset):
             batch = self.mean_var_normalize(batch)
         if self.transform is not None:
             batch = self.transform(batch)
-        batch.to(self.device)
+        batch = batch.to(self.device)
         batch.requires_grad_()
         return batch
 
