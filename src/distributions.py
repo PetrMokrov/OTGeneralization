@@ -7,6 +7,7 @@ from sklearn.mixture import GaussianMixture
 import abc
 from torch.utils.data import Dataset, DataLoader, IterableDataset
 from multipledispatch import dispatch
+import matplotlib.pyplot as plt
 
 class DistributionSampler(IterableDataset):
 
@@ -138,6 +139,12 @@ class DistributionSampler(IterableDataset):
         batch = batch.to(self.device)
         batch.requires_grad_()
         return batch
+    
+    def draw_samples(self, size=1000):
+
+        X = self.sample(size).detach().cpu().numpy()
+        plt.scatter(X[:, 0], X[:, 1], edgecolors='black', s=4.)
+        plt.show()
 
 class SwissRollSampler(DistributionSampler):
 
@@ -231,6 +238,58 @@ class BallUniformSampler(DistributionSampler):
             generator=self.torch_random_gen
         ) ** (1. / self.dim)
         return (batch.transpose(0, 1) * r).transpose(0, 1)
+
+class LineGaussiansSampler(DistributionSampler):
+    '''
+    Creates Sampler of mixture of gausians located equidistantly
+    on the line y = 0
+    :Parameters:
+    n : int : count of gausians
+    l : float or int : distance betwee gausians centers 
+    std : float : sqr of variance of each gausian
+    :: Parameters of Distribution sampler ::
+    '''
+
+    def __init__(
+        self, n, l=1, std=1., dim=2, device='cuda', dtype=torch.float, 
+        requires_grad=False, random_seed=None, normalize=False, 
+        n_normalize=10000, transform=None):
+
+        super().__init__(
+            device=device, dtype=dtype, requires_grad=requires_grad, 
+            transform=transform)
+        
+        assert dim == 2
+        assert n >= 1
+        self.dim = 2
+        self.n = n
+        self.std, self.l = std, float(l)
+        centers = torch.arange(
+            - self.l * (self.n - 1) / 2., 
+            self.l * self.n / 2., 
+            self.l, dtype=self.dtype)
+        self.centers = torch.stack([centers, torch.zeros_like(centers)]).T
+        # print(self.centers.shape)
+        
+        self.torch_random_gen = random_seed
+        if normalize:
+            self._create_normalizer(n_normalize)
+
+    def sample_distribution(self, batch_size):
+        batch = torch.randn(
+            batch_size, self.dim, dtype=self.dtype,
+            generator=self.torch_random_gen
+        )
+        indices = torch.multinomial(
+            torch.ones(len(self.centers))/len(self.centers), batch_size, 
+            replacement=True, generator=self.torch_random_gen)
+        # print(indices)
+        # print(self.centers)
+        batch *= self.std
+        # print(batch.shape)
+        # print(self.centers[indices, :].shape)
+        batch += self.centers[indices, :]
+        return batch
     
 class Mix8GaussiansSampler(DistributionSampler):
     def __init__(
