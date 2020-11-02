@@ -2,8 +2,71 @@ import torch
 import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
+from copy import copy
 
 from .layers import ConvexQuadratic
+
+class LinDenseICNN(nn.Module):
+    '''
+    Fully Connected ICNN which follows the [Makkuva et.al.] article:
+    (https://arxiv.org/pdf/1908.10962.pdf)
+    '''
+
+    def __init__(
+        self, in_dim, 
+        hidden_layer_sizes=[64, 64, 64, 64], 
+        activation=nn.LeakyReLU(0.2), device='cuda'):
+
+        super().__init__()
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.activation = activation
+        self.in_dim = in_dim
+        self.device = device
+
+        _hidden = copy(self.hidden_layer_sizes)
+        w_sizes = zip(_hidden[:-1], _hidden[1:])
+
+        self.W_layers = nn.ModuleList([
+            nn.Linear(in_dim, out_dim)
+            for in_dim, out_dim in w_sizes
+        ])
+
+        self.A_layers = nn.ModuleList([
+            nn.Linear(self.in_dim, out_dim) 
+            for out_dim in _hidden
+        ])
+        self.final_layer = nn.Linear(self.hidden_layer_sizes[-1], 1, bias=False)
+        self.to(self.device)
+    
+    def forward(self, input):
+        z = self.activation(self.A_layers[0](input))
+        for a_layer, w_layer in zip(self.A_layers[1:], self.W_layers[:]):
+            z = self.activation(a_layer(input) + w_layer(z))
+        
+        return self.final_layer(z)
+    
+    def push(self, input):
+        output = autograd.grad(
+            outputs=self.forward(input), inputs=input,
+            create_graph=True, retain_graph=True,
+            only_inputs=True,
+            grad_outputs=torch.ones((input.size()[0], 1)).to(self.device).float()
+        )[0]
+        return output      
+
+    def convexify(self):
+        for layer in self.W_layers:
+            assert isinstance(layer, nn.Linear)
+            layer.weight.data.clamp_(0)
+        self.final_layer.weight.data.clamp_(0)
+    
+    def relaxed_convexity_regularization(self):
+        regularizer = 0.
+        for layer in self.W_layers:
+            assert isinstance(layer, nn.Linear)
+            regularizer += layer.weight.clamp(max=0.).pow(2).sum()
+        regularizer += self.final_layer.weight.clamp(max=0.).pow(2).sum()
+        return regularizer
     
 class DenseICNN(nn.Module):
     '''Fully Conncted ICNN with input-quadratic skip connections'''
