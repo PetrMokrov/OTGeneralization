@@ -131,6 +131,15 @@ class DenseICNN(nn.Module):
                 if (isinstance(sublayer, nn.Linear)):
                     sublayer.weight.data.clamp_(0)
         self.final_layer.weight.data.clamp_(0)
+
+    def relaxed_convexity_regularization(self):
+        regularizer = 0.
+        for layer in self.convex_layers:
+            for sublayer in layer:
+                if (isinstance(sublayer, nn.Linear)):
+                    regularizer += sublayer.weight.clamp(max=0.).pow(2).sum()
+        regularizer += self.final_layer.weight.clamp(max=0.).pow(2).sum()
+        return regularizer
               
 class View(nn.Module):
     def __init__(self, *shape):
